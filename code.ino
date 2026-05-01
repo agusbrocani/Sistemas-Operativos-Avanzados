@@ -169,7 +169,7 @@ void luz_deteccion(void *pvParameters) {
                 Serial.println(evento == EV_DIA_DETECTADO ? "EV_DIA_DETECTADO" : "EV_NOCHE_DETECTADA");
             }
         }
-        vTaskDelay(200);
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
 }
 
@@ -179,14 +179,17 @@ void luz_controlador(void *pvParameters) {
     while(1) {
         // Esperar eventos en la cola de eventos
         // Ejecutar la transición correspondiente de la tabla de estados
-        TickType_t timeOut = 0; // hace falta ponerle un valor? creo que no porque usamos vTaskDelay(200);
+        TickType_t timeOut = 0; // hace falta ponerle un valor? creo que no porque usamos vTaskDelay(pdMS_TO_TICKS(200));
         if (xQueueReceive(queueEventos_luz, &evento_recibido, timeOut) == pdPASS) {
             Serial.print("[luz_controlador] Evento recibido=");
             Serial.print(evento_recibido);
             Serial.print(" | estado_previo=");
             Serial.println(current_state_luz);
+
+
+            // Usar la tabla de estados para ejecutar la transición correspondiente
         }
-        vTaskDelay(200); // Falta pdMS_TO_TICKS si queremos pasar de segundos a ticks
+        vTaskDelay(pdMS_TO_TICKS(200)); // Falta pdMS_TO_TICKS si queremos pasar de segundos a ticks
         // Para nosotros es un await
     }
 }
@@ -197,7 +200,7 @@ void luz_accion(void *pvParameters) {
         // Esperar acciones en la cola de acciones
         // Ejecutar la acción correspondiente (encender o apagar el LED)
 
-        vTaskDelay(200);
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
 }
 
