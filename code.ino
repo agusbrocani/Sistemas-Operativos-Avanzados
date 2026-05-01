@@ -547,29 +547,69 @@ void puerta_accion(void *pvParameters) {
 }
 
 
+char leer_serial_puerta()
+{
+    if(Serial.available() > 0)
+    {
+        char comando = Serial.read();
+        if(comando == 'B')
+        {
+            return 'B';
+        }
+        else if(comando == 'D')
+        {
+            return 'D';
+        }
+    }
+    return 'N';
+}
+
+
+void detectar_animales_en_puerta()
+{
+    leer_sensor_proximidad();
+    if (sensor_proximidad_detectar_animal()) {
+        events_puerta evento = EV_ANIMAL_DETECTADO_ADENTRO;
+        if (xQueueSend(queueEventos_puerta, &evento, 0) != pdPASS) {
+            Serial.println("[puerta_deteccion] Cola de eventos LLENA");
+        }
+        sensor_rfid.estado = ESTADO_DESHABILITADO;
+        sensor_proximidad.estado = ESTADO_DESHABILITADO;
+    }
+    leer_sensor_rfid();
+    if (sensor_rfid_detectar_animal()) {
+        events_puerta evento = EV_ANIMAL_DETECTADO_AFUERA;
+        if (xQueueSend(queueEventos_puerta, &evento, 0) != pdPASS) {
+            Serial.println("[puerta_deteccion] Cola de eventos LLENA");
+        }
+        sensor_proximidad.estado = ESTADO_DESHABILITADO;
+        sensor_rfid.estado = ESTADO_DESHABILITADO;
+    }
+}
+
 void puerta_deteccion(void *pvParameters) {
     while(1) {
-        leer_sensor_proximidad();
 
-        if (current_state_puerta == ST_CERRADA_NO_BLOQUEADA) {
-            if (sensor_proximidad_detectar_animal()) {
-                events_puerta evento = EV_ANIMAL_DETECTADO_ADENTRO;
+        if(current_state_puerta == ST_CERRADA_NO_BLOQUEADA)
+        {
+            char bloqueo = leer_serial_puerta();
+            if(bloqueo == 'B')
+            {
+                events_puerta evento = EV_BLOQUEO_POR_APP;
                 if (xQueueSend(queueEventos_puerta, &evento, 0) != pdPASS) {
                     Serial.println("[puerta_deteccion] Cola de eventos LLENA");
                 }
-                sensor_rfid.estado = ESTADO_DESHABILITADO;
             }
-
-            leer_sensor_rfid();
-           
-            if (sensor_rfid_detectar_animal()) {
-                events_puerta evento = EV_ANIMAL_DETECTADO_AFUERA;
+            else if(bloqueo == 'D')
+            {
+                events_puerta evento = EV_DESBLOQUEO_POR_APP;
                 if (xQueueSend(queueEventos_puerta, &evento, 0) != pdPASS) {
                     Serial.println("[puerta_deteccion] Cola de eventos LLENA");
                 }
-                sensor_proximidad.estado = ESTADO_DESHABILITADO;
             }
         }
+        detectar_animales_en_puerta();
+
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
