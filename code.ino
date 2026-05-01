@@ -258,6 +258,11 @@ void configuracion_pines_esp32() {
     pinMode(LED, OUTPUT);
     pinMode(FOTORESISTOR, INPUT);
     pinMode(BUZZER, OUTPUT);
+    ESP32PWM::allocateTimer(0);
+    ESP32PWM::allocateTimer(1);
+    ESP32PWM::allocateTimer(2);
+    ESP32PWM::allocateTimer(3);
+    servo.setPeriodHertz(50);
     servo.attach(SERVO, 500, 2500);
     pinMode(SENSOR_PROXIMIDAD_ECHO, INPUT);
     pinMode(SENSOR_PROXIMIDAD_TRIGGER, OUTPUT);
