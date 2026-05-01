@@ -22,8 +22,8 @@
 #define UMBRAL_LUZ 2048
 #define UMBRAL_PROXIMIDAD_CM 30
 #define TIMEOUT_PUERTA_MS 5000
-#define ANGULO_CERRADA 0
-#define ANGULO_ABIERTA_AFUERA 90
+#define ANGULO_CERRADA 90
+#define ANGULO_ABIERTA_AFUERA 0
 #define ANGULO_ABIERTA_ADENTRO 180
 #define BEEP_MS 80
 
@@ -155,6 +155,7 @@ void puerta_deteccion(void *pvParameters);
 void puerta_controlador(void *pvParameters);
 void puerta_accion(void *pvParameters);
 long medir_distancia_cm();
+void buzzer_beep(int freq_hz, int duration_ms);
 
 // Generales
 void configuracion_debbug_esp32();
@@ -498,6 +499,23 @@ long medir_distancia_cm()
   return (long)((duracion * 343UL) / 20000UL); // cm
 }
 
+// Genera onda cuadrada en BUZZER sin usar LEDC (evita conflicto con ESP32Servo)
+void buzzer_beep(int freq_hz, int duration_ms)
+{
+  if (freq_hz <= 0 || duration_ms <= 0)
+    return;
+  unsigned long period_us = 1000000UL / (unsigned long)freq_hz;
+  unsigned long half_us = period_us / 2;
+  unsigned long cycles = ((unsigned long)duration_ms * 1000UL) / period_us;
+  for (unsigned long i = 0; i < cycles; i++)
+  {
+    digitalWrite(BUZZER, HIGH);
+    delayMicroseconds(half_us);
+    digitalWrite(BUZZER, LOW);
+    delayMicroseconds(half_us);
+  }
+}
+
 void puerta_deteccion(void *pvParameters)
 {
 #ifdef INICIO_BLOQUEADO
@@ -588,28 +606,20 @@ void puerta_accion(void *pvParameters)
       {
       case ACC_ABRIR_DESDE_AFUERA:
         servo_puerta.write(ANGULO_ABIERTA_AFUERA);
-        digitalWrite(BUZZER, HIGH);
-        vTaskDelay(pdMS_TO_TICKS(BEEP_MS));
-        digitalWrite(BUZZER, LOW);
-        Serial.println("[puerta_accion] ABIERTA DESDE AFUERA");
+        buzzer_beep(1000, 300);
+        Serial.println("[puerta_accion] ABIERTA DESDE AFUERA (buzzer 1000Hz)");
         break;
       case ACC_ABRIR_DESDE_ADENTRO:
         servo_puerta.write(ANGULO_ABIERTA_ADENTRO);
-        digitalWrite(BUZZER, HIGH);
-        vTaskDelay(pdMS_TO_TICKS(BEEP_MS));
-        digitalWrite(BUZZER, LOW);
-        Serial.println("[puerta_accion] ABIERTA DESDE ADENTRO");
+        buzzer_beep(1500, 300);
+        Serial.println("[puerta_accion] ABIERTA DESDE ADENTRO (buzzer 1500Hz)");
         break;
       case ACC_CERRAR:
         servo_puerta.write(ANGULO_CERRADA);
-        digitalWrite(BUZZER, HIGH);
-        vTaskDelay(pdMS_TO_TICKS(BEEP_MS));
-        digitalWrite(BUZZER, LOW);
-        vTaskDelay(pdMS_TO_TICKS(80));
-        digitalWrite(BUZZER, HIGH);
-        vTaskDelay(pdMS_TO_TICKS(BEEP_MS));
-        digitalWrite(BUZZER, LOW);
-        Serial.println("[puerta_accion] CERRADA");
+        buzzer_beep(600, 150);
+        vTaskDelay(pdMS_TO_TICKS(100));
+        buzzer_beep(600, 150);
+        Serial.println("[puerta_accion] CERRADA (buzzer 600Hz x2)");
         break;
       }
     }
