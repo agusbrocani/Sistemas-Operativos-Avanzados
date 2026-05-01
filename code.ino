@@ -4,10 +4,28 @@
 #define LED 25
 #define FOTORESISTOR 35
 
-// Cantidad máxima de sensores
+// RFID MFRC522
+#define RFID_SS    21   // SDA en el módulo, SS en SPI
+#define RFID_SCK   18
+#define RFID_MOSI  23
+#define RFID_MISO  19
+#define RFID_RST   22
+
+// Proximidad HC-SR04
+#define SENSOR_PROXIMIDAD_ECHO 34
+#define SENSOR_PROXIMIDAD_TRIGGER 5 
+
+#define BUZZER 4
+#define SERVO 12
+
+// // Cantidad máxima de sensores
 #define MAX_CANT_SENSORES 1
 #define IDX_SENSOR_LUZ 0
+// #define IDX_SENSOR_PROXIMIDAD 1
+// #define IDX_SENSOR_RFID 2
 
+
+// ---------------------- Luz ----------------------
 // Eventos
 enum events_luz {
     EV_CONT,
@@ -24,7 +42,6 @@ enum states_luz {
 } current_state_luz; //Declaro el estado global de la luz
 #define CANT_MAX_ESTADOS_LUZ 2
 
-
 // Acciones
 enum actions_luz {
     ACC_ENCENDER_LUZ,
@@ -32,17 +49,56 @@ enum actions_luz {
 };
 #define CANT_MAX_ACCIONES_LUZ 2
 
-
 // Tamaños de las colas
 #define TAM_EV_COLA_LUZ 10
 #define TAM_ACC_COLA_LUZ 10
 QueueHandle_t queueEventos_luz;
 QueueHandle_t queueAcciones_luz;
 
-
 // Umbrales
 #define UMBRAL_LUZ 2048 // Probar en wokwi y ajustar
 
+
+// ---------------------- Puerta ----------------------
+// Eventos
+enum events_puerta {
+  EV_INIT_NO_BLOQUEADA,
+  EV_INIT_BLOQUEADA,
+  EV_DESBLOQUEO_POR_APP,
+  EV_BLOQUEO_POR_APP,
+  EV_ANIMAL_DETECTADO_ADENTRO,
+  EV_ANIMAL_DETECTADO_AFUERA,
+  EV_TIMEOUT
+};
+#define CANT_MAX_EVENTOS_PUERTA 7 
+
+// Estados
+enum states_puerta {
+  ST_ARRANQUE,
+  ST_CERRADA_NO_BLOQUEADA,
+  ST_CERRADA_BLOQUEADA,
+  ST_ABIERTA_DESDE_AFUERA,
+  ST_ABIERTA_DESDE_ADENTRO
+} current_state_puerta; //Declaro el estado global de la puerta
+#define CANT_MAX_ESTADOS_PUERTA 5
+
+// Acciones
+enum actions_puerta {
+  ACC_ABRIR_DESDE_AFUERA,
+  ACC_ABRIR_DESDE_ADENTRO,
+  ACC_CERRAR
+};
+#define CANT_MAX_ACCIONES_PUERTA 3
+
+// Tamaños de las colas
+#define TAM_EV_COLA_PUERTA 10
+#define TAM_ACC_COLA_PUERTA 10
+QueueHandle_t queueEventos_puerta;
+QueueHandle_t queueAcciones_puerta;
+
+
+// ---------------------- Estructura de datos ----------------------
+// Array de sensores (CAMBIAR, ANDA SOLO PARA LUZ)
 struct stSensor
 {
   int  pin;
@@ -53,20 +109,54 @@ struct stSensor
 stSensor sensores[MAX_CANT_SENSORES];
 
 
+struct stSensorProximidad {
+    int pin_echo;
+    int pin_trigger;
+    int estado;
+    float distancia_actual_cm;
+    int tiempo_transcurrido_ms;
+    const float velocidad_sonido = 0.0343;
+    const float distancia_minima_cm = 30;
+}; stSensorProximidad sensor_proximidad; //Sensor global de proximidad
+
+
+struct stSensorRFID {
+    int pin_ss;
+    int pin_reset;
+    int estado;
+    int id_tag;
+}; stSensorRFID sensor_rfid; //Sensor global de RFID
+
+
+
 typedef void (*transition)();
 
 // Firmas de las funciones
 void none();
 void encender_luz();
 void apagar_luz();
-void crear_colas_luz();
+void configuracion_debbug_esp32();
 void configuracion_pines_esp32();
+void setup_luz();
+
 void configuracion_sensores_luz();
 void configuracion_estado_inicial_luz();
+void crear_colas_luz();
+
 void crear_tareas_luz();
 void luz_deteccion(void *pvParameters);
 void luz_controlador(void *pvParameters);
 void luz_accion(void *pvParameters);
+
+void setup_puerta();
+void crear_colas_puerta();
+void configuracion_sensores_puerta();
+void configuracion_estado_inicial_puerta();
+
+void crear_tareas_puerta();
+void puerta_deteccion(void *pvParameters);
+void puerta_controlador(void *pvParameters);
+void puerta_accion(void *pvParameters);
 
 transition luz_state_table[CANT_MAX_ESTADOS_LUZ][CANT_MAX_EVENTOS_LUZ] =
 {
@@ -115,8 +205,13 @@ void apagar_luz(){
 // --------------- SETUP Y LOOP ---------------
 void setup() {
     configuracion_debbug_esp32();
-    crear_colas_luz();
     configuracion_pines_esp32();
+    setup_luz();
+    // setup_puerta();
+}
+
+void setup_luz() {
+    crear_colas_luz();
     configuracion_sensores_luz();
     configuracion_estado_inicial_luz();
     crear_tareas_luz();
@@ -125,7 +220,7 @@ void setup() {
 
 void configuracion_sensores_luz() {
     sensores[IDX_SENSOR_LUZ].pin = FOTORESISTOR;
-    sensores[IDX_SENSOR_LUZ].estado = 0; // Esto lo vamos a usar?
+    sensores[IDX_SENSOR_LUZ].estado = 1; // Esto lo vamos a usar?
     sensores[IDX_SENSOR_LUZ].valor_actual = 0;
     sensores[IDX_SENSOR_LUZ].valor_previo = 0; // Esto lo vamos a usar?
 }
@@ -255,6 +350,81 @@ void loop() {
 
 }
 
+
+/* ---------------------- Setup puerta ---------------------- */
+transition puerta_state_table[CANT_MAX_ESTADOS_PUERTA][CANT_MAX_EVENTOS_PUERTA] =
+{
+    {init_no_bloqueada,      init_bloqueada,    none,                  none,               none,                        none,                       none         }, // state ST_ARRANQUE
+    {none,                   none,              none,                  bloquear_puerta,    abrir_desde_adentro,         abrir_desde_afuera,         none         }, // state ST_CERRADA_NO_BLOQUEADA
+    {none,                   none,              desbloquear_puerta,    none,               none,                        none,                       none         }, // state ST_CERRADA_BLOQUEADA
+    {none,                   none,              none,                  none,               none,                        none,                       cerrar_puerta}, // state ST_ABIERTA_DESDE_AFUERA
+    {none,                   none,              none,                  none,               none,                        none,                       cerrar_puerta}  // state ST_ABIERTA_DESDE_ADENTRO
+
+    // EV_INIT_NO_BLOQUEADA, EV_INIT_BLOQUEADA, EV_DESBLOQUEO_POR_APP, EV_BLOQUEO_POR_APP, EV_ANIMAL_DETECTADO_ADENTRO, EV_ANIMAL_DETECTADO_AFUERA, EV_TIMEOUT
+};
+
+
+void setup_puerta() {
+    crear_colas_puerta();
+    configuracion_sensores_puerta();
+    configuracion_estado_inicial_puerta();
+    crear_tareas_puerta();
+}
+
+void crear_colas_puerta() {
+    queueEventos_puerta = xQueueCreate(TAM_EV_COLA_PUERTA, sizeof(events_puerta));
+    queueAcciones_puerta = xQueueCreate(TAM_ACC_COLA_PUERTA, sizeof(actions_puerta));
+}
+
+void configuracion_sensores_puerta() {
+    // Sensor de proximidad
+    sensor_proximidad.pin_echo = SENSOR_PROXIMIDAD_ECHO;
+    sensor_proximidad.pin_trigger = SENSOR_PROXIMIDAD_TRIGGER;
+    sensor_proximidad.estado = 1;
+    sensor_proximidad.distancia_actual_cm = 0;
+    sensor_proximidad.tiempo_transcurrido_ms = 0;
+
+    // Sensor RFID
+    sensor_rfid.pin_ss = RFID_SS;
+    sensor_rfid.pin_reset = RFID_RST;
+    sensor_rfid.estado = 1;
+    sensor_rfid.id_tag = 0;
+}
+
+
+void configuracion_estado_inicial_puerta() {
+    current_state_puerta = ST_ARRANQUE;
+}
+
+
+void crear_tareas_puerta() {
+    int tam_stack_bytes = 1024 * 8;
+    xTaskCreate(puerta_deteccion, "Puerta detección", tam_stack_bytes, NULL, 1, NULL);
+    xTaskCreate(puerta_controlador, "Puerta controlador", tam_stack_bytes, NULL, 1, NULL);
+    xTaskCreate(puerta_accion, "Puerta accion", tam_stack_bytes, NULL, 1, NULL);
+}
+
+
+void puerta_deteccion(void *pvParameters) {
+    while(1) {
+        // Leer el valor del sensor de proximidad
+        // Leer el valor del sensor RFID
+        // Comparar con el umbral
+        // Emitir evento correspondiente a la cola de eventos
+    }
+}
+
+
+void puerta_controlador(void *pvParameters) {
+    while(1) {}
+}
+
+
+void puerta_accion(void *pvParameters) {
+    while(1) {
+
+    }
+}
 /*
  BaseType_t xTaskCreate( TaskFunction_t pvTaskCode,
                          const char * const pcName,
