@@ -78,19 +78,36 @@ transition luz_state_table[CANT_MAX_ESTADOS_LUZ][CANT_MAX_EVENTOS_LUZ] =
 
 
 void none(){
-    // No hacer nada
     return;
 }
 
 void encender_luz(){
     // Emitir la acción a la cola de acciones
     // Transicionar a ST_LUZ_ENCENDIDA
+    Serial.print("Transición iniciada: Luz encendida\n");
+    current_state_luz = ST_LUZ_ENCENDIDA;
+    actions_luz action = ACC_ENCENDER_LUZ;
+    if (xQueueSend(queueAcciones_luz, &action, 0) != pdPASS) {
+        Serial.println("[luz_controlador] Cola de acciones LLENA");
+    }
+    else {
+        Serial.print(">> Acción emitida: ACC_ENCENDER_LUZ");
+    }
     return;
 }
 
 void apagar_luz(){
     // Emitir la acción a la cola de acciones
     // Transicionar a ST_LUZ_APAGADA
+    Serial.print("Transición iniciada: Luz apagada\n");
+    current_state_luz = ST_LUZ_APAGADA;
+    actions_luz action = ACC_APAGAR_LUZ;
+    if (xQueueSend(queueAcciones_luz, &action, 0) != pdPASS) {
+        Serial.println("[luz_controlador] Cola de acciones LLENA");
+    }
+    else {
+        Serial.print(">> Acción emitida: ACC_APAGAR_LUZ");
+    }
     return;
 }
 
@@ -150,12 +167,12 @@ void luz_deteccion(void *pvParameters) {
         bool hay_evento = false;
 
         if (current_state_luz == ST_LUZ_APAGADA &&
-            sensores[IDX_SENSOR_LUZ].valor_actual < UMBRAL_LUZ) {
+            sensores[IDX_SENSOR_LUZ].valor_actual > UMBRAL_LUZ) {
             evento = EV_NOCHE_DETECTADA;
             hay_evento = true;
         }
         else if (current_state_luz == ST_LUZ_ENCENDIDA &&
-                 sensores[IDX_SENSOR_LUZ].valor_actual >= UMBRAL_LUZ) {
+                 sensores[IDX_SENSOR_LUZ].valor_actual <= UMBRAL_LUZ) {
             evento = EV_DIA_DETECTADO;
             hay_evento = true;
         }
@@ -169,7 +186,7 @@ void luz_deteccion(void *pvParameters) {
                 Serial.println(evento == EV_DIA_DETECTADO ? "EV_DIA_DETECTADO" : "EV_NOCHE_DETECTADA");
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
 
@@ -182,14 +199,21 @@ void luz_controlador(void *pvParameters) {
         TickType_t timeOut = 0; // hace falta ponerle un valor? creo que no porque usamos vTaskDelay(pdMS_TO_TICKS(200));
         if (xQueueReceive(queueEventos_luz, &evento_recibido, timeOut) == pdPASS) {
             Serial.print("[luz_controlador] Evento recibido=");
-            Serial.print(evento_recibido);
+            Serial.print(evento_recibido == EV_NOCHE_DETECTADA ? "EV_NOCHE_DETECTADA" : "EV_DIA_DETECTADO");
             Serial.print(" | estado_previo=");
-            Serial.println(current_state_luz);
+            Serial.println(current_state_luz == ST_LUZ_APAGADA ? "ST_LUZ_APAGADA" : "ST_LUZ_ENCENDIDA");
 
-
-            // Usar la tabla de estados para ejecutar la transición correspondiente
+            if (evento_recibido < CANT_MAX_EVENTOS_LUZ)
+            {
+                transition transition_function = luz_state_table[current_state_luz][evento_recibido];
+                transition_function();
+            }
+            else
+            {
+                Serial.println("[luz_controlador] Evento fuera de rango");
+            }
         }
-        vTaskDelay(pdMS_TO_TICKS(200)); // Falta pdMS_TO_TICKS si queremos pasar de segundos a ticks
+        vTaskDelay(pdMS_TO_TICKS(2000)); // Falta pdMS_TO_TICKS si queremos pasar de segundos a ticks
         // Para nosotros es un await
     }
 }
@@ -197,10 +221,24 @@ void luz_controlador(void *pvParameters) {
 
 void luz_accion(void *pvParameters) {
     while(1) {
+        actions_luz action_recibido;
         // Esperar acciones en la cola de acciones
         // Ejecutar la acción correspondiente (encender o apagar el LED)
-
-        vTaskDelay(pdMS_TO_TICKS(200));
+        TickType_t timeOut = 0; // hace falta ponerle un valor? creo que no porque usamos vTaskDelay(pdMS_TO_TICKS(200));
+        if (xQueueReceive(queueAcciones_luz, &action_recibido, timeOut) == pdPASS) {
+            Serial.print("[luz_accion] Accion recibida=");
+            Serial.print(action_recibido == ACC_ENCENDER_LUZ ? "ACC_ENCENDER_LUZ" : "ACC_APAGAR_LUZ");
+            if (action_recibido == ACC_ENCENDER_LUZ) {
+                digitalWrite(LED, HIGH);
+            }
+            else if (action_recibido == ACC_APAGAR_LUZ) {
+                digitalWrite(LED, LOW);
+            }
+            else {
+                Serial.println("[luz_accion] Accion fuera de rango");
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
 
