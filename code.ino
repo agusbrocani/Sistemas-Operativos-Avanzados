@@ -125,12 +125,15 @@ struct stSensorProximidad {
     const float distancia_minima_cm = 30;
 }; stSensorProximidad sensor_proximidad; //Sensor global de proximidad
 
+// RFID (crea el objeto que ocupa el lector)
+MFRC522 mfrc522(RFID_SDA, RFID_RST);
 
 struct stSensorRFID {
     int pin_ss;
     int pin_reset;
     estado_sensor estado;
     int id_tag;
+    bool acceso_permitido;
 }; stSensorRFID sensor_rfid; //Sensor global de RFID
 
 
@@ -475,6 +478,9 @@ void configuracion_sensores_puerta() {
     sensor_rfid.pin_reset = RFID_RST;
     sensor_rfid.estado = ESTADO_HABILITADO;
     sensor_rfid.id_tag = 0;
+
+    SPI.begin(RFID_SCK, RFID_MISO, RFID_MOSI, RFID_SDA);
+    mfrc522.PCD_Init();
 }
 
 
@@ -554,6 +560,7 @@ void puerta_deteccion(void *pvParameters) {
             }
 
             leer_sensor_rfid();
+           
             if (sensor_rfid_detectar_animal()) {
                 events_puerta evento = EV_ANIMAL_DETECTADO_AFUERA;
                 if (xQueueSend(queueEventos_puerta, &evento, 0) != pdPASS) {
@@ -568,12 +575,30 @@ void puerta_deteccion(void *pvParameters) {
 
 
 void leer_sensor_rfid() {
-    // Leer el sensor RFID
+    if (!rfid.PICC_IsNewCardPresent() && !rfid.PICC_ReadCardSerial())
+        return;
+
+    Serial.println(F("RFID detectado"));
+
+    // Magia negra del RFID, no tocar
+    rfid.PICC_HaltA();
+    rfid.PCD_StopCrypto1();
+    sensor_rfid.acceso_permitido = true;
 }
 
-
 bool sensor_rfid_detectar_animal() {
-    return false;
+    if (sensor_rfid.acceso_permitido &&
+        sensor_rfid.estado == ESTADO_HABILITADO &&
+        current_state_puerta == ST_CERRADA_NO_BLOQUEADA
+    ) {
+        Serial.println("[sensor_rfid_detectar_animal] Animal detectado desde afuera");
+        sensor_rfid.acceso_permitido = false;
+        return true;
+    }
+    else {
+        Serial.println("[sensor_rfid_detectar_animal] Animal no detectado desde afuera");
+        return false;
+    }
 }
 
 void leer_sensor_proximidad() {
