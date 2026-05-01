@@ -1,4 +1,5 @@
 #include <ESP32Servo.h>
+#include <MFRC522.h>
 
 // Revisar los PINS y agregar el RFID
 #define LED 25
@@ -126,7 +127,7 @@ struct stSensorProximidad {
 }; stSensorProximidad sensor_proximidad; //Sensor global de proximidad
 
 // RFID (crea el objeto que ocupa el lector)
-MFRC522 mfrc522(RFID_SDA, RFID_RST);
+MFRC522 rfid(RFID_SS, RFID_RST);
 
 struct stSensorRFID {
     int pin_ss;
@@ -142,7 +143,7 @@ Servo servo;
 
 // Timer
 TimerHandle_t timer_puerta;
-#define TIEMPO_TIMEOUT_PUERTA 10000
+#define TIEMPO_TIMEOUT_PUERTA 4500
 
 
 // ---------------------- Firmas de las funciones ----------------------
@@ -479,8 +480,8 @@ void configuracion_sensores_puerta() {
     sensor_rfid.estado = ESTADO_HABILITADO;
     sensor_rfid.id_tag = 0;
 
-    SPI.begin(RFID_SCK, RFID_MISO, RFID_MOSI, RFID_SDA);
-    mfrc522.PCD_Init();
+    SPI.begin(RFID_SCK, RFID_MISO, RFID_MOSI, RFID_SS);
+    rfid.PCD_Init();
 }
 
 
