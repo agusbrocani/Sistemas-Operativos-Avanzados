@@ -258,12 +258,7 @@ void configuracion_pines_esp32() {
     pinMode(LED, OUTPUT);
     pinMode(FOTORESISTOR, INPUT);
     pinMode(BUZZER, OUTPUT);
-    ESP32PWM::allocateTimer(0);
-    ESP32PWM::allocateTimer(1);
-    ESP32PWM::allocateTimer(2);
-    ESP32PWM::allocateTimer(3);
-    servo.setPeriodHertz(50);
-    servo.attach(SERVO, 500, 2500);
+    servo.attach(SERVO);
     pinMode(SENSOR_PROXIMIDAD_ECHO, INPUT);
     pinMode(SENSOR_PROXIMIDAD_TRIGGER, OUTPUT);
 }
@@ -526,7 +521,7 @@ void puerta_accion(void *pvParameters) {
                 xTimerStart(timer_puerta, 0);
             }
             else if (action_recibido == ACC_ABRIR_DESDE_ADENTRO) {
-                Serial.println("ACC_ABRIR_DESDE_ADENTRO");
+                Serial.println("ACC_ABRIR_DESDE_ADENTRO 180 grados ACA");
                 servo.write(180);
                 xTimerStart(timer_puerta, 0);
             }
