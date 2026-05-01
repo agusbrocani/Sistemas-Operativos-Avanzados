@@ -1,0 +1,16 @@
+{
+    "permissions": {
+        "allow": [
+            "Bash(pio run)",
+            "Bash(pio run --target clean)",
+            "Bash(git status)",
+            "Bash(git diff)",
+            "Bash(git log --oneline -5)"
+        ],
+        "deny": [
+            "Bash(rm -rf *)",
+            "Bash(git push --force)",
+            "Bash(git reset --hard)"
+        ]
+    }
+}
