@@ -747,6 +747,11 @@ void puerta_deteccion(void *pvParameters)
 
 void leer_sensor_rfid()
 {
+  // Limpiar flag stale antes de evaluar: el flag representa "tarjeta detectada en esta iteracion".
+  // Sin este reset, una lectura previa hecha mientras la puerta estaba BLOQUEADA queda flotando
+  // y dispara una deteccion fantasma al desbloquear.
+  sensor_rfid.acceso_permitido = false;
+
   if (!rfid.PICC_IsNewCardPresent() && !rfid.PICC_ReadCardSerial())
     return;
 
