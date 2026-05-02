@@ -101,9 +101,11 @@ enum actions_puerta
 {
   ACC_ABRIR_DESDE_AFUERA,
   ACC_ABRIR_DESDE_ADENTRO,
-  ACC_CERRAR
+  ACC_CERRAR,
+  ACC_BLOQUEAR,
+  ACC_DESBLOQUEAR
 };
-#define CANT_MAX_ACCIONES_PUERTA 3
+#define CANT_MAX_ACCIONES_PUERTA 5
 
 #define TAM_EV_COLA_PUERTA 10
 #define TAM_ACC_COLA_PUERTA 10
@@ -228,12 +230,24 @@ void init_bloqueada()
 
 void bloquear_puerta()
 {
+  actions_puerta accion = ACC_BLOQUEAR;
+  if (xQueueSend(queueAcciones_puerta, &accion, 0) != pdPASS)
+  {
+    Serial.println("[bloquear_puerta] Cola de acciones LLENA");
+    return;
+  }
   current_state_puerta = ST_CERRADA_BLOQUEADA;
   Serial.println(">> Transicion puerta: NO_BLOQUEADA -> BLOQUEADA (app)");
 }
 
 void desbloquear_puerta()
 {
+  actions_puerta accion = ACC_DESBLOQUEAR;
+  if (xQueueSend(queueAcciones_puerta, &accion, 0) != pdPASS)
+  {
+    Serial.println("[desbloquear_puerta] Cola de acciones LLENA");
+    return;
+  }
   current_state_puerta = ST_CERRADA_NO_BLOQUEADA;
   Serial.println(">> Transicion puerta: BLOQUEADA -> NO_BLOQUEADA (app)");
 }
@@ -606,20 +620,27 @@ void puerta_accion(void *pvParameters)
       {
       case ACC_ABRIR_DESDE_AFUERA:
         servo_puerta.write(ANGULO_ABIERTA_AFUERA);
-        buzzer_beep(1000, 300);
-        Serial.println("[puerta_accion] ABIERTA DESDE AFUERA (buzzer 1000Hz)");
+        Serial.println("[puerta_accion] ABIERTA DESDE AFUERA");
         break;
       case ACC_ABRIR_DESDE_ADENTRO:
         servo_puerta.write(ANGULO_ABIERTA_ADENTRO);
-        buzzer_beep(1500, 300);
-        Serial.println("[puerta_accion] ABIERTA DESDE ADENTRO (buzzer 1500Hz)");
+        Serial.println("[puerta_accion] ABIERTA DESDE ADENTRO");
         break;
       case ACC_CERRAR:
         servo_puerta.write(ANGULO_CERRADA);
-        buzzer_beep(600, 150);
-        vTaskDelay(pdMS_TO_TICKS(100));
-        buzzer_beep(600, 150);
-        Serial.println("[puerta_accion] CERRADA (buzzer 600Hz x2)");
+        Serial.println("[puerta_accion] CERRADA");
+        break;
+      case ACC_BLOQUEAR:
+        // Sonido descendente grave (600 -> 300 Hz): "se cierra con llave"
+        buzzer_beep(600, 120);
+        buzzer_beep(300, 200);
+        Serial.println("[puerta_accion] BLOQUEADA (buzzer 600->300Hz)");
+        break;
+      case ACC_DESBLOQUEAR:
+        // Sonido ascendente agudo (600 -> 1200 Hz): "se abre con llave"
+        buzzer_beep(600, 120);
+        buzzer_beep(1200, 200);
+        Serial.println("[puerta_accion] DESBLOQUEADA (buzzer 600->1200Hz)");
         break;
       }
     }
