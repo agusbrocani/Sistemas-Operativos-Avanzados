@@ -18,6 +18,7 @@
 
 #define BUZZER 4
 #define SERVO 12
+#define BUTTON_APP 14 // Pulsador de bloqueo/desbloqueo (toggle), pull-down externo en diagram.json
 
 // // Cantidad máxima de sensores
 #define MAX_CANT_SENSORES 1
@@ -91,9 +92,11 @@ enum actions_puerta
 {
   ACC_ABRIR_DESDE_AFUERA,
   ACC_ABRIR_DESDE_ADENTRO,
-  ACC_CERRAR
+  ACC_CERRAR,
+  ACC_BLOQUEAR,
+  ACC_DESBLOQUEAR
 };
-#define CANT_MAX_ACCIONES_PUERTA 3
+#define CANT_MAX_ACCIONES_PUERTA 5
 
 // Tamaños de las colas
 #define TAM_EV_COLA_PUERTA 10
@@ -178,6 +181,10 @@ void crear_tareas_puerta();
 void puerta_deteccion(void *pvParameters);
 void puerta_controlador(void *pvParameters);
 void puerta_accion(void *pvParameters);
+void leer_sensor_proximidad();
+bool sensor_proximidad_detectar_animal();
+void leer_sensor_rfid();
+bool sensor_rfid_detectar_animal();
 
 typedef void (*transition)();
 transition luz_state_table[CANT_MAX_ESTADOS_LUZ][CANT_MAX_EVENTOS_LUZ] =
@@ -279,6 +286,7 @@ void configuracion_pines_esp32()
   servo.attach(SERVO);
   pinMode(SENSOR_PROXIMIDAD_ECHO, INPUT);
   pinMode(SENSOR_PROXIMIDAD_TRIGGER, OUTPUT);
+  pinMode(BUTTON_APP, INPUT);
 }
 
 // --------------- TAREAS ---------------
@@ -405,6 +413,7 @@ void desbloquear_puerta();
 void abrir_desde_adentro();
 void abrir_desde_afuera();
 void cerrar_puerta();
+void buzzer_beep(int freq_hz, int duration_ms);
 
 transition puerta_state_table[CANT_MAX_ESTADOS_PUERTA][CANT_MAX_EVENTOS_PUERTA] =
     {
@@ -431,10 +440,28 @@ void init_bloqueada()
 void bloquear_puerta()
 {
   current_state_puerta = ST_CERRADA_BLOQUEADA;
+  actions_puerta action = ACC_BLOQUEAR;
+  if (xQueueSend(queueAcciones_puerta, &action, 0) != pdPASS)
+  {
+    Serial.println("[puerta_accion] Cola de acciones LLENA");
+  }
+  else
+  {
+    Serial.print(">> Acción emitida: ACC_BLOQUEAR");
+  }
 }
 void desbloquear_puerta()
 {
   current_state_puerta = ST_CERRADA_NO_BLOQUEADA;
+  actions_puerta action = ACC_DESBLOQUEAR;
+  if (xQueueSend(queueAcciones_puerta, &action, 0) != pdPASS)
+  {
+    Serial.println("[puerta_accion] Cola de acciones LLENA");
+  }
+  else
+  {
+    Serial.print(">> Acción emitida: ACC_DESBLOQUEAR");
+  }
 }
 
 // Aperturas de la puerta
@@ -557,7 +584,24 @@ void puerta_controlador(void *pvParameters)
         Serial.println("[puerta_controlador] Evento fuera de rango");
       }
     }
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    vTaskDelay(pdMS_TO_TICKS(200));
+  }
+}
+
+// Genera onda cuadrada en BUZZER sin usar LEDC (evita conflicto con ESP32Servo)
+void buzzer_beep(int freq_hz, int duration_ms)
+{
+  if (freq_hz <= 0 || duration_ms <= 0)
+    return;
+  unsigned long period_us = 1000000UL / (unsigned long)freq_hz;
+  unsigned long half_us = period_us / 2;
+  unsigned long cycles = ((unsigned long)duration_ms * 1000UL) / period_us;
+  for (unsigned long i = 0; i < cycles; i++)
+  {
+    digitalWrite(BUZZER, HIGH);
+    delayMicroseconds(half_us);
+    digitalWrite(BUZZER, LOW);
+    delayMicroseconds(half_us);
   }
 }
 
@@ -588,12 +632,26 @@ void puerta_accion(void *pvParameters)
         sensor_proximidad.estado = ESTADO_HABILITADO;
         sensor_rfid.estado = ESTADO_HABILITADO;
       }
+      else if (action_recibido == ACC_BLOQUEAR)
+      {
+        Serial.println("ACC_BLOQUEAR");
+        // Sonido descendente grave (600 -> 300 Hz): "se cierra con llave"
+        buzzer_beep(600, 120);
+        buzzer_beep(300, 200);
+      }
+      else if (action_recibido == ACC_DESBLOQUEAR)
+      {
+        Serial.println("ACC_DESBLOQUEAR");
+        // Sonido ascendente agudo (600 -> 1200 Hz): "se abre con llave"
+        buzzer_beep(600, 120);
+        buzzer_beep(1200, 200);
+      }
       else
       {
         Serial.println("[puerta_accion] Accion fuera de rango");
       }
     }
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    vTaskDelay(pdMS_TO_TICKS(200));
   }
 }
 
@@ -642,8 +700,24 @@ void detectar_animales_en_puerta()
 
 void puerta_deteccion(void *pvParameters)
 {
+  static bool app_supuesto_bloqueado = false;
+  static int btn_estado_previo = LOW;
+
   while (1)
   {
+    // Pulsador de la app (D14): toggle bloqueo/desbloqueo. Funciona en cualquier estado.
+    int btn_actual = digitalRead(BUTTON_APP);
+    if (btn_actual == HIGH && btn_estado_previo == LOW)
+    {
+      app_supuesto_bloqueado = !app_supuesto_bloqueado;
+      events_puerta evento = app_supuesto_bloqueado ? EV_BLOQUEO_POR_APP : EV_DESBLOQUEO_POR_APP;
+      if (xQueueSend(queueEventos_puerta, &evento, 0) == pdPASS)
+      {
+        Serial.print(">> Evento puerta (boton): ");
+        Serial.println(app_supuesto_bloqueado ? "EV_BLOQUEO_POR_APP" : "EV_DESBLOQUEO_POR_APP");
+      }
+    }
+    btn_estado_previo = btn_actual;
 
     if (current_state_puerta == ST_CERRADA_NO_BLOQUEADA)
     {
@@ -667,7 +741,7 @@ void puerta_deteccion(void *pvParameters)
     }
     detectar_animales_en_puerta();
 
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    vTaskDelay(pdMS_TO_TICKS(200));
   }
 }
 
